@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body>
+
+  <h2>Code 1</h2>
+
+  <label>8-stelliger Code</label>
+  <input id="code8" type="text" placeholder="12345678" />
+
+  <button id="getCodeBtn">4-stelligen Code holen</button>
+
+  <p>4-stelliger Code: <span id="generatedCode">----</span></p>
+
+  <button id="backBtn">Zurück zum Login</button>
+
+  <script>
+    document.getElementById("getCodeBtn").addEventListener("click", () => {
+      const c8 = document.getElementById("code8").value.trim();
+
+      // Test-Regel: nur wenn 8-stellig, dann “bekommst du” 4-stelligen Code
+      if (c8.length !== 8 || !/^\d{8}$/.test(c8)) {
+        alert("❌ Bitte 8 Ziffern eingeben!");
+        return;
+      }
+
+      // 4-stelligen Code generieren (Test)
+      const code4 = String(Math.floor(1000 + Math.random() * 9000));
+      document.getElementById("generatedCode").innerText = code4;
+
+      // speichern, damit login.html ihn prüfen kann
+      localStorage.setItem("code4", code4);
+    });
+
+    document.getElementById("backBtn").addEventListener("click", () => {
+      window.location.href = "login.html";
+    });
+  </script>
+
+</body>
+</html>

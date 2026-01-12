@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8" /></head>
+<body>
+
+  <h2>Login</h2>
+
+  <label>Email</label>
+  <input id="email" type="text" />
+
+  <label>Password</label>
+  <input id="password" type="password" />
+
+  <button id="nextBtn">Weiter</button>
+
+  <hr/>
+
+  <h3>Bestätigungscode</h3>
+  <input id="code4" type="text" placeholder="4-stelliger Code" />
+  <button id="confirmBtn">Login bestätigen</button>
+
+  <div id="msg"></div>
+
+  <script>
+    document.getElementById("nextBtn").addEventListener("click", () => {
+      // (Test) “Login Daten ok” → weiter
+      localStorage.setItem("email", document.getElementById("email").value);
+      window.location.href = "code1.html";
+    });
+
+    document.getElementById("confirmBtn").addEventListener("click", () => {
+      const real = localStorage.getItem("code4");
+      const entered = document.getElementById("code4").value.trim();
+
+      if (real && entered === real) {
+        document.getElementById("msg").innerText = "✅ Login bestätigt!";
+      } else {
+        document.getElementById("msg").innerText = "❌ Falscher Code!";
+      }
+    });
+  </script>
+
+</body>
+</html>
