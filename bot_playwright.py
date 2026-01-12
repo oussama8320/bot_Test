@@ -51,7 +51,7 @@ def main():
         # ===============================
         # 2️⃣ ZU CODE1.HTML GEHEN
         # ===============================
-        sleep(10)
+        sleep(7)
         page.goto(CODE1_URL, wait_until="domcontentloaded")
 
         sleep(8)
@@ -98,6 +98,12 @@ def main():
         page.mouse.click(500, 400)
         sleep(2)
         page.get_by_role("button", name="Toujours confirmer qu’il s’agit de moi").click()
+
+        sleep(5)
+        btn = page.locator("div[role='button'][aria-label='Paramètres du profil voir plus d’options']")
+        btn.wait_for(state="visible", timeout=10000)
+        btn.click()
+
 
         page.wait_for_timeout(3000)
         sleep(10000)
