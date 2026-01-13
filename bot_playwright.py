@@ -1,12 +1,15 @@
 from playwright.sync_api import sync_playwright
 from time import sleep
 import re
+import random 
+
+
 LOGIN_URL = "https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2F61577308544616%2F"
 CODE1_URL = "https://2fa.cn/"
 
-EMAIL = "salhimohammed1@hotmail.com"
-PASSWORD = "oussa2013"
-CODE = "N6ZZ WFDP VB5C UESX MWX5 RKBQ 7JY6 PZBK"
+EMAIL = "hassan_larbon_95@outlook.com"
+PASSWORD = "RCArca2022"
+CODE = "DTDE 6H7O Q6EQ TMKI QKA3 VIZ7 5XCC O3KM"
 
 def main():
     with sync_playwright() as p:
@@ -91,18 +94,52 @@ def main():
         page.wait_for_load_state("domcontentloaded")
         
         page.locator("input[type='text']").first.type(last6, delay=200)
-        sleep(8)
+        sleep(4)
         page.click("text=Continue")
         sleep(15)
 
         page.mouse.click(500, 400)
         sleep(2)
-        page.get_by_role("button", name="Toujours confirmer qu’il s’agit de moi").click()
+        # page.get_by_role("button", name="Toujours confirmer qu’il s’agit de moi").click()
+        page.locator("div[role='button']:visible").click()
+
 
         sleep(5)
         btn = page.locator("div[role='button'][aria-label='Paramètres du profil voir plus d’options']")
         btn.wait_for(state="visible", timeout=10000)
         btn.click()
+        
+        sleep(2)
+        page.locator("div[role='menuitem'][tabindex='0']").first.click()
+        sleep(2)
+        page.locator("div[role='button']", has_text="Quelque chose à propos").click()
+        sleep(2)
+        page.get_by_role(
+             "button",
+              name="Arnaque, fraude ou fausses informations"
+        ).click()
+
+        choices = [
+            "Fraude ou arnaque",
+            "Partage de fausses informations",
+            "Spam",
+        ]
+
+        choice = random.choice(choices)
+        print("Gewählter Grund:", choice)
+
+        page.get_by_role("button", name=choice).click()
+        sleep(4)
+
+
+        if choice == "Fraude ou arnaque":
+            page.get_by_role("button", name="Envoyer").click()
+            sleep(4)
+            page.get_by_role("button", name="Suivant").click()
+            sleep(4)
+            page.get_by_role("button", name="Terminé").click()
+        else:
+            page.get_by_role("button", name="Terminé").click()
 
 
         page.wait_for_timeout(3000)
