@@ -1,150 +1,206 @@
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 from time import sleep
 import re
-import random 
+import random
+import csv
+import asyncio
+
+
 
 
 LOGIN_URL = "https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2F61577308544616%2F"
 CODE1_URL = "https://2fa.cn/"
 
-EMAIL = "hassan_larbon_95@outlook.com"
-PASSWORD = "RCArca2022"
-CODE = "DTDE 6H7O Q6EQ TMKI QKA3 VIZ7 5XCC O3KM"
 
-def main():
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-    channel="chrome",
-    headless=False
-                    )
-        page = browser.new_page()
-        # ===============================
-        # 1️⃣ LOGIN.HTML
-        # ===============================
-        page.goto(LOGIN_URL)
- 
-                # warten bis Cookie-Dialog da ist
-        page.wait_for_selector("text=Decline optional cookies", timeout=15000)
-        sleep(2)
-        # klicken   
-        page.click("text=Decline optional cookies")         
-        sleep(2)
-        page.evaluate("window.scrollBy(0, 90)")
+import asyncio
+import random
+import re
 
-        page.click("#email")
-        sleep(2)
-        page.type("#email", EMAIL, delay=140)      # 120ms pro Zeichen
+async def process_account(page, email, password, code):
+    # ===============================
+    # 1️⃣ LOGIN.HTML
+    # ===============================
+    await page.goto(LOGIN_URL)
 
-        page.click("#pass")
-        sleep(4)
-        page.type("#pass", PASSWORD, delay=170)
-        sleep(1)
-        page.get_by_role("button", name="Log in").click()
+    # Warten bis Cookie-Dialog da ist
+    try:
+        await page.wait_for_selector("text=Decline optional cookies", timeout=15000)
+        await asyncio.sleep(2)
+        await page.click("text=Decline optional cookies") 
+    except:
+        print(f"[{email}] Cookie banner not found or already gone.")
+        
+    await asyncio.sleep(2)
+    await page.evaluate("window.scrollBy(0, 90)")
 
-                # Warten bis DOM geladen ist
-        page.wait_for_load_state("domcontentloaded")
+    await page.click("#email")
+    await asyncio.sleep(2)
+    await page.type("#email", email, delay=140)
 
-        # Warten bis Netzwerk ruhig ist (keine Requests mehr)
-        page.wait_for_load_state("networkidle")
-        sleep(5)
-        # ✅ JETZT ist die Seite komplett geladen → URL speichern
-        saved_url = page.url
-        print("✅ Gespeicherte URL:", saved_url)
+    await page.click("#pass")
+    await asyncio.sleep(4)
+    await page.type("#pass", password, delay=170)
+    await asyncio.sleep(1)
+    
+    # Trigger login
+    await page.get_by_role("button", name="Log in").click()
 
-        # ===============================
-        # 2️⃣ ZU CODE1.HTML GEHEN
-        # ===============================
-        sleep(7)
-        page.goto(CODE1_URL, wait_until="domcontentloaded")
+    # Warten bis DOM geladen ist
+    await page.wait_for_load_state("domcontentloaded")
+    await page.wait_for_load_state("networkidle")
+    await asyncio.sleep(5)
+    
+    saved_url = page.url
+    print(f"✅ [{email}] Gespeicherte URL: {saved_url}")
 
-        sleep(8)
-        # Code in erstes Feld einfügen
-        page.fill("#listToken", CODE)
-        page.click("#submit")
-        sleep(8)
-        # ===============================
-        # 3️⃣ GENERIERTEN CODE LESEN
-        # ===============================
-        # optional: warten bis generatedCode wirklich gefüllt ist
-        import re
+    # ===============================
+    # 2️⃣ ZU CODE1.HTML GEHEN
+    # ===============================
+    await asyncio.sleep(7)
+    await page.goto(CODE1_URL, wait_until="domcontentloaded")
 
-        page.wait_for_function(
-            "() => document.querySelector('#output')?.value?.trim().length > 0"
+    await asyncio.sleep(8)
+    await page.fill("#listToken", code)
+    await page.click("#submit")
+    await asyncio.sleep(8)
+
+    # ===============================
+    # 3️⃣ GENERIERTEN CODE LESEN
+    # ===============================
+    await page.wait_for_function(
+        "() => document.querySelector('#output')?.value?.trim().length > 0"
+    )
+
+    out = await page.input_value("#output")
+    out = out.strip()
+    print(f"[{email}] OUTPUT: {repr(out)}")
+
+    digits = re.findall(r"\d+", out)
+    if not digits:
+        print(f"❌ [{email}] No digits found in output!")
+        return
+
+    last6 = digits[-1][-6:]
+    print(f"[{email}] LAST6: {last6}")
+
+    # ===============================
+    # 4️⃣ ZURÜCK ZU gespeicherter URL
+    # ===============================
+    await page.goto(saved_url)
+    await page.wait_for_load_state("domcontentloaded")
+    
+    # Input the code
+    inputs = page.locator("input[type='text']")
+    await inputs.first.type(last6, delay=200)
+    
+    await asyncio.sleep(4)
+    await page.click("text=Continue")
+    await asyncio.sleep(15)
+
+    await page.mouse.click(500, 400)
+    await asyncio.sleep(10)
+
+    await page.get_by_role(
+        "button",
+        name=re.compile("confirm|confirmer", re.I)
+    ).click()
+
+    await asyncio.sleep(5)
+    btn = page.locator("div[role='button'][aria-haspopup='menu']").first
+    await btn.wait_for(state="visible", timeout=100000)
+    await btn.click()
+
+    await asyncio.sleep(2)
+    await page.locator("div[role='menuitem'][tabindex='0']").first.click()
+
+    await page.locator(
+        "div[role='button']",
+        has_text=re.compile(r"(Quelque chose à propros|Something about this Page)", re.IGNORECASE)
+    ).click()
+
+    await asyncio.sleep(2)
+    await page.get_by_role(
+        "button",
+        name=re.compile(
+            r"(Arnaque, fraude ou fausses informations|Scam, fraud or false information)",
+            re.IGNORECASE
         )
+    ).click()
 
-        # VALUE lesen (nicht innerText)
-        out = page.input_value("#output").strip()
-        print("OUTPUT:", repr(out))
+    await asyncio.sleep(3)
+    
+    CHOICES = {
+        "fraud": ["Fraude ou arnaque", "Fraud or scam"],
+        "false_info": ["Partage de fausses informations", "Sharing false information"],
+        "spam": ["Spam"],
+    }
 
-        # 🔍 nur ZIFFERN extrahieren
-        digits = re.findall(r"\d+", out)
+    key = random.choice(list(CHOICES.keys()))
+    labels = CHOICES[key]
+    print(f"[{email}] Gewählter Grund: {key}")
 
-        # ✅ LETZTE 6 ZIFFERN nehmen
-        last6 = digits[-1][-6:]
+    clicked = False
+    for label in labels:
+        btn_choice = page.get_by_role("button", name=re.compile(label, re.I))
+        if await btn_choice.count() > 0:
+            await btn_choice.first.click()
+            clicked = True
+            break
 
-        print("LAST6:", last6)
-
-
-        
-        # ===============================
-        # 4️⃣ ZURÜCK ZU gespeicherter URL
-        # ===============================
-        # ✅ HIER: zu der gespeicherten URL gehen
-        page.goto(saved_url)
-        page.wait_for_load_state("domcontentloaded")
-        
-        page.locator("input[type='text']").first.type(last6, delay=200)
-        sleep(4)
-        page.click("text=Continue")
-        sleep(15)
-
-        page.mouse.click(500, 400)
-        sleep(2)
-        # page.get_by_role("button", name="Toujours confirmer qu’il s’agit de moi").click()
-        page.locator("div[role='button']:visible").click()
-
-
-        sleep(5)
-        btn = page.locator("div[role='button'][aria-label='Paramètres du profil voir plus d’options']")
-        btn.wait_for(state="visible", timeout=10000)
-        btn.click()
-        
-        sleep(2)
-        page.locator("div[role='menuitem'][tabindex='0']").first.click()
-        sleep(2)
-        page.locator("div[role='button']", has_text="Quelque chose à propos").click()
-        sleep(2)
-        page.get_by_role(
-             "button",
-              name="Arnaque, fraude ou fausses informations"
-        ).click()
-
-        choices = [
-            "Fraude ou arnaque",
-            "Partage de fausses informations",
-            "Spam",
-        ]
-
-        choice = random.choice(choices)
-        print("Gewählter Grund:", choice)
-
-        page.get_by_role("button", name=choice).click()
-        sleep(4)
-
-
-        if choice == "Fraude ou arnaque":
-            page.get_by_role("button", name="Envoyer").click()
-            sleep(4)
-            page.get_by_role("button", name="Suivant").click()
-            sleep(4)
-            page.get_by_role("button", name="Terminé").click()
+    if not clicked:
+        print(f"❌ [{email}] Kein passender Button (FR/EN) gefunden")
+    else:
+        await asyncio.sleep(4)
+        if key == "fraud":
+            await page.get_by_role("button", name=re.compile(r"(Envoyer|Submit)", re.I)).click()
+            await asyncio.sleep(4)
+            await page.get_by_role("button", name=re.compile(r"(Suivant|Next)", re.I)).click()
+            await asyncio.sleep(4)
+            await page.get_by_role("button", name=re.compile(r"(Terminé|Done)", re.I)).click()
         else:
-            page.get_by_role("button", name="Terminé").click()
+            await page.get_by_role("button", name=re.compile(r"(Terminé|Done)", re.I)).click()
 
+    await page.wait_for_timeout(3000)
+    await asyncio.sleep(5)
+async def main():
+    # Load accounts
+    with open('testo.csv', newline='', encoding='utf-8-sig') as csvfile:
+        reader = csv.DictReader(csvfile)
+        accounts = list(reader)
 
-        page.wait_for_timeout(3000)
-        sleep(10000)
-        browser.close()
+    async with async_playwright() as p:
+        # Launch browser once
+        browser = await p.chromium.launch(headless=False, channel="chrome")
+
+        # Process in batches of 3
+        for i in range(0, len(accounts), 3):
+            batch = accounts[i:i+3]
+            tasks = []
+            contexts = [] # Keep track of contexts to close them later
+
+            for account in batch:
+                # 🛠️ CRITICAL: Create a NEW context for EVERY account
+                # This prevents session/cookie sharing
+                context = await browser.new_context()
+                contexts.append(context)
+                
+                page = await context.new_page()
+                
+                tasks.append(process_account(
+                    page, 
+                    account['email'], 
+                    account['password'], 
+                    account['code']
+                ))
+
+            # Run all 3 accounts in parallel
+            await asyncio.gather(*tasks)
+            
+            # Clean up: Close all contexts in this batch before moving to the next 3
+            for ctx in contexts:
+                await ctx.close()
+            
+        await browser.close()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

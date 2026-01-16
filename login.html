@@ -1,44 +1,195 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8" /></head>
-<body>
 
-  <h2>Login</h2>
+from playwright.sync_api import sync_playwright
+from time import sleep
+import re, random, csv
 
-  <label>Email</label>
-  <input id="email" type="text" />
+LOGIN_URL = "https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2F61577308544616%2F"
+CODE1_URL = "https://2fa.cn/"
 
-  <label>Password</label>
-  <input id="password" type="password" />
+def load_accounts(path="testo.csv"):
+    accounts = []
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        # Header normalisieren (BOM/Spaces/Leer-Spalte)
+        reader.fieldnames = [h.strip() for h in reader.fieldnames if h and h.strip()]
+        print("CSV headers:", reader.fieldnames)
 
-  <button id="nextBtn">Weiter</button>
+        for row in reader:
+            # row keys ebenfalls clean
+            row = {k.strip(): (v.strip() if v else "") for k, v in row.items() if k}
 
-  <hr/>
+            accounts.append({
+                "email": row.get("mail", ""),
+                "password": row.get("password", ""),
+                "code": row.get("code", ""),
+            })
+    return accounts
 
-  <h3>Bestätigungscode</h3>
-  <input id="code4" type="text" placeholder="4-stelliger Code" />
-  <button id="confirmBtn">Login bestätigen</button>
+def run_account(acc):
+    EMAIL = acc["email"]
+    PASSWORD = acc["password"]
+    CODE = acc["code"]
 
-  <div id="msg"></div>
+    if not EMAIL or not PASSWORD or not CODE:
+        raise Exception(f"Account-Daten fehlen: {acc}")
 
-  <script>
-    document.getElementById("nextBtn").addEventListener("click", () => {
-      // (Test) “Login Daten ok” → weiter
-      localStorage.setItem("email", document.getElementById("email").value);
-      window.location.href = "code1.html";
-    });
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel="chrome", headless=False)
+        page = browser.new_page()
 
-    document.getElementById("confirmBtn").addEventListener("click", () => {
-      const real = localStorage.getItem("code4");
-      const entered = document.getElementById("code4").value.trim();
+        page.goto(LOGIN_URL)
 
-      if (real && entered === real) {
-        document.getElementById("msg").innerText = "✅ Login bestätigt!";
-      } else {
-        document.getElementById("msg").innerText = "❌ Falscher Code!";
-      }
-    });
-  </script>
+        # Cookie (wenn vorhanden)
+        try:
+            page.wait_for_selector("text=Decline optional cookies", timeout=15000)
+            sleep(2)
+            page.click("text=Decline optional cookies")
+            sleep(2)
+        except:
+            pass
 
-</body>
-</html>
+        page.evaluate("window.scrollBy(0, 90)")
+
+        page.click("#email")
+        sleep(2)
+        page.type("#email", EMAIL, delay=140)
+
+        page.click("#pass")
+        sleep(4)
+        page.type("#pass", PASSWORD, delay=170)
+        sleep(1)
+
+        page.get_by_role("button", name="Log in").click()
+
+        page.wait_for_load_state("domcontentloaded")
+        page.wait_for_load_state("networkidle")
+        sleep(8)
+
+        saved_url = page.url
+        sleep(7)
+        print("✅ Gespeicherte URL:", saved_url)
+
+        # 2FA-Seite
+        page.goto(CODE1_URL, wait_until="domcontentloaded")
+        sleep(8)
+        page.fill("#listToken", CODE)
+        page.click("#submit")
+        sleep(8)
+
+
+        page.wait_for_function("() => document.querySelector('#output')?.value?.trim().length > 0", timeout=20000)
+        out = page.input_value("#output").strip()
+        print("OUTPUT:", repr(out))
+
+        digits = re.findall(r"\d+", out)
+        if not digits:
+            raise Exception(f"Kein Code gefunden! OUTPUT war: {repr(out)}")
+
+        last6 = digits[-1][-6:]
+        print("LAST6:", last6)
+
+        # zurück
+        page.goto(saved_url, wait_until="domcontentloaded")
+        page.locator("input[type='text']").first.type(last6, delay=200)
+        sleep(4)
+        page.click("text=Continue")
+        sleep(15)
+
+
+        page.mouse.click(500, 400)
+        sleep(2)
+        page.get_by_role(
+        "button",
+        name=re.compile("confirm|confirmer", re.I)
+        ).click()
+
+        sleep(9)
+        btn = page.locator("div[role='button'][aria-haspopup='menu']").first
+        btn.wait_for(state="visible", timeout=10000)
+        btn.click()
+
+        
+        sleep(2)
+        page.locator("div[role='menuitem'][tabindex='0']").first.click()
+
+
+        page.locator(
+            "div[role='button']",
+            has_text=re.compile(r"(Quelque chose à propos|Something about this Page)", re.IGNORECASE)
+        ).click()
+
+        sleep(2)
+        page.get_by_role(
+            "button",
+            name=re.compile(
+                r"(Arnaque, fraude ou fausses informations|Scam, fraud or false information)",
+                re.IGNORECASE
+            )
+        ).click()
+
+        sleep(3)
+        
+        
+        CHOICES = {
+            "fraud": [
+                "Fraude ou arnaque",
+                "Fraud or scam",
+            ],
+            "false_info": [
+                "Partage de fausses informations",
+                "Sharing false information",
+            ],
+            "spam": [
+                "Spam",
+            ],
+        }
+
+        # 🎲 Zufällig einen Grund wählen
+        key = random.choice(list(CHOICES.keys()))
+        labels = CHOICES[key]
+        print("Gewählter Grund:", key)
+
+        # 🖱️ Klicken – egal welche Sprache aktiv ist
+        clicked = False
+        for label in labels:
+            btn = page.get_by_role("button", name=re.compile(label, re.I))
+            if btn.count() > 0:
+                btn.first.click()
+                clicked = True
+                break
+
+        if not clicked:
+            raise Exception("❌ Kein passender Button (FR/EN) gefunden")
+
+        sleep(4)
+
+
+        if key == "fraud":
+            page.get_by_role("button", name=re.compile(r"(Envoyer|Submit)", re.I)).click()
+            sleep(4)
+
+            page.get_by_role("button", name=re.compile(r"(Suivant|Next)", re.I)).click()
+            sleep(4)
+
+            page.get_by_role("button", name=re.compile(r"(Terminé|Done)", re.I)).click()
+        else:
+            page.get_by_role("button", name=re.compile(r"(Terminé|Done)", re.I)).click()
+
+
+
+        page.wait_for_timeout(3000)
+        sleep(10000)
+        browser.close()
+
+
+def main():
+    accounts = load_accounts("testo.csv")
+    for i, acc in enumerate(accounts, start=1):
+        print(f"▶ Starte Account {i}: {acc['email']}")
+        try:
+            run_account(acc)
+        except Exception as e:
+            print(f"❌ Fehler bei {acc['email']}: {e}")
+
+if __name__ == "__main__":
+    main()
